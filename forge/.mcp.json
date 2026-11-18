@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "forge": {
+      "type": "http",
+      "url": "${FORGE_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${FORGE_MCP_KEY}"
+      }
+    }
+  }
+}

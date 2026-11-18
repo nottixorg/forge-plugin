@@ -1,0 +1,10 @@
+# Il server MCP di Forge per Codex: copia questo blocco in ~/.codex/config.toml.
+# Da provare (C-2230): Codex parla col server in HTTP e manda la chiave come
+# «Authorization: Bearer», presa dalla variabile d'ambiente FORGE_MCP_KEY.
+# La chiave non si scrive mai qui: si crea nel Profilo dell'app di Forge,
+# voce «Chiavi MCP», e si mette nell'ambiente di chi lancia Codex.
+
+[mcp_servers.forge]
+# L'indirizzo del server MCP del tuo workspace, quello che finisce con /mcp.
+url = "https://INDIRIZZO-DEL-SERVER-MCP/mcp"
+bearer_token_env_var = "FORGE_MCP_KEY"
