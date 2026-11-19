@@ -309,7 +309,8 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    che rifiuta (una partenza almeno in
    `triggers`; `forge.records_upsert` vuole `records` o `records_json`; in `notify.app` `deep_link` è un
    percorso letterale che inizia con `/`, `recipients` sono e-mail letterali, `severity` è `info`, `warning`
-   o `critical`; lo `schedule` di una partenza `cron` ha 5 campi e non riparte prima di 15 minuti, e
+   o `critical`; `workspace_key`, in `notify.app` e negli altri nodi che chiamano un servizio del tenant, è
+   facoltativo e, se c'è, è il tuo workspace: quello di un altro workspace è rifiutato; lo `schedule` di una partenza `cron` ha 5 campi e non riparte prima di 15 minuti, e
    `timezone` è un fuso che esiste; dove Forge legge i permessi del tenant, i dataset, i secret, i job, gli
    host degli URL e le operazioni che scrivono sono fra quelli ammessi) è 400 `workflow_definition_invalid`,
    ed `errors` dice per ognuno il passo (`step`, null se è
