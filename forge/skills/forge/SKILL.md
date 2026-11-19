@@ -46,8 +46,13 @@ Il server ha un prompt per ognuna, con i passi: `crea_elenco`, `costruisci_fluss
   `workflows_run_now`, lettura con `workflows_executions` e `workflows_logs`, orario con
   `workflows_set_schedule`, `workflows_enable` col sì della persona.
 - **Una mini app**: `forge://mini-app/kit`, `apps_preview_upload`, poi `apps_publish` o `drafts_submit`.
+- **Un gruppo di persone**: è un record della collezione `groups` (nome nel campo `name`), si crea con
+  `records_create` su `groups`. I `groupIds` di `members_update` e `invites_create` sono gli `id` che dà
+  `records_list` su `groups`.
 
 ## Quando uno strumento rifiuta
 
 Il rifiuto ha un JSON con `error` e `status`, poi una frase con cosa è successo e «Cosa fare». Seguila
-prima di riprovare. Su un 429 aspetta i secondi di `retry_after`. Tutti i codici: `forge://errori`.
+prima di riprovare. Su un 429 aspetta i secondi di `retry_after`, e così su un 409 con `retry_after`
+(un'automazione appena scritta è ancora in pubblicazione): non è un difetto, si riprova dopo quei secondi.
+Tutti i codici: `forge://errori`.

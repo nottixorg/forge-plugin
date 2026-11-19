@@ -7,7 +7,7 @@
       "name": "forge",
       "source": "./forge",
       "description": "Lavora su Forge di Mademind da Claude Code, con la tua chiave MCP personale.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }

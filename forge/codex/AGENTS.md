@@ -14,7 +14,7 @@ Regole:
 - Leggi prima di scrivere: views_list prima di sostituire le viste, records_get prima di cambiare un record.
 - Senza i poteri da amministratore uno schema o le viste condivise si propongono in bozza (drafts_propose_*), poi drafts_submit: la approva un admin dall'app.
 - Una cancellazione non torna indietro: chiedi conferma alla persona prima di ogni strumento segnato distruttivo.
-- Credenziali, connettori, agenti nuovi, SQL e rilasci non si fanno da qui.
+- Credenziali e consensi dei connettori, agenti nuovi, SQL e rilasci non si fanno da qui: lo stato dei connettori si legge (connectors_list).
 - Le quote si leggono con quotas_list.
 - Per portare uno schema da Supabase o da un altro Postgres: la ricetta in forge://guida, o il prompt porta_schema.
 - Un rifiuto dice, dopo il JSON, cosa è successo e «Cosa fare»: seguilo prima di riprovare.
@@ -53,6 +53,11 @@ nel gruppo che può crearle. Dura al massimo 30 giorni; ognuno ne tiene al massi
 
 Il perimetro di una collezione (`scope` own, group, own_or_group) può farti vedere solo una parte dei record. Gli strumenti che `tools/list` non mostra non
 sono per questa chiave: chiamarli dà 403.
+
+`mcp_keys_list` elenca le chiavi della persona (con i poteri da amministratore, tutte quelle del
+workspace), mai il segreto; `currentKeyId` è la chiave con cui stai parlando. `mcp_keys_revoke`
+(scrittura) ne revoca una: se è quella in uso, dalla chiamata dopo ogni risposta è 401
+`invalid_api_key`. Prima di revocarla chiedilo alla persona.
 
 ## Da dove partire
 
@@ -154,13 +159,14 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
 8. **Una vista SQL** diventa una di queste cose:
    - filtra, ordina o raggruppa una tabella: una vista dell'elenco (`views_replace_shared`). Sugli elenchi
      da file non ancora (C-2234);
-   - conta o somma: `records_aggregate`. Una misura salvata da mettere in una dashboard: non ancora (C-2255);
+   - conta o somma: `records_aggregate`; una misura salvata, per periodo e gruppo: `measures_define` (admin),
+     vedi «Dashboard, misure, consegne». Nei widget delle dashboard non ancora (C-2386);
    - unisce più tabelle in un elenco o in un calendario: una pagina (`pages_upsert`), vedi «Pagine, menu e
      home dell'app»;
    - unisce più tabelle in una schermata su misura: una mini app. Non ancora per intero: il manifesto non
      nomina un elenco creato da qui (C-2057) e l'app pubblicata non compare nel menu (C-2192);
    - un riepilogo ricalcolato ogni notte: un'automazione a orario che scrive un elenco di riepilogo, con
-     l'orario messo da `workflows_set_schedule`: quello scritto nella definizione è ignorato (C-2241).
+     l'orario scritto nella partenza `cron` (poi lo cambia `workflows_set_schedule`).
 9. **Una funzione o un trigger** diventa una di queste cose:
    - tiene `updated_at` o una tabella di storico: niente, Forge tiene la storia di ogni record
      (`records_revisions`);
@@ -171,13 +177,14 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
      riscriverli con `collections_update` senza chiedere;
    - quando una riga cambia, manda una mail o chiama un servizio: un'automazione che parte dal cambio.
      Non ancora: nessuno la fa partire (C-2054);
-   - gira a un orario (`pg_cron`): un'automazione a orario (vedi C-2241 qui sopra);
+   - gira a un orario (`pg_cron`): un'automazione a orario, con lo `schedule` della partenza `cron`;
    - è chiamata da fuori, con un webhook: un'automazione che parte da un webhook, non ancora (C-2249);
    - gira davanti a una persona, che vede la proposta e conferma: una mini app. Le mini app che scrivono
      record: non ancora (C-2293);
    - fa un calcolo lungo da sola, come assegnare persone a turni o compiti: le regole dei lavori notturni
-     del workspace, dove ci sono. Cambiarle da qui e vedere l'anteprima del giorno dopo: non ancora
-     (C-2267); cosa il motore di assegnazione sa esprimere: non ancora (C-2294). Generare da zero la
+     del workspace, dove ci sono: si cambiano con `night_rules_preview` e `night_rules_save` (admin, vedi
+     «Regole dei lavori notturni»); l'anteprima del giorno dopo che le giudica non ancora (C-2457); cosa
+     il motore di assegnazione sa esprimere: non ancora (C-2294). Generare da zero la
      turnazione del mese: non ancora, è da decidere dove (C-2352). Nessun passo di un'automazione esegue
      codice del cliente.
 10. Prima di spegnere il vecchio database, la persona confronta i due risultati sugli stessi giorni.
@@ -236,21 +243,36 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    (`branches`), `return`. Le espressioni stanno in `${...}`: `${ep.url}`, `${len(righe) > 0}`.
    Nodi e partenze ammessi cambiano da un workspace all'altro: li elenca `forge://flussi/nodi`, e il rifiuto
    `workflow_nodes_not_allowed` li ripete in `allowed_nodes` e `allowed_triggers`. Lo `schedule` di una
-   partenza `cron` non fa partire niente: l'orario lo mette `workflows_set_schedule`. Una definizione minima,
+   partenza `cron` è l'orario con cui il workflow nasce, nel fuso `timezone` (di base Europe/Rome); dopo
+   lo cambia solo `workflows_set_schedule`, anche il fuso con `time_zone`. Una definizione minima,
    con un passo solo che fa un conto:
 
    ```json
    {"create": true, "definition": {"apiVersion": "forge.workflows/v2", "meta": {"name": "prova-conto", "description": "Fa un conto e lo scrive nei log"}, "triggers": [{"type": "cron", "schedule": "0 7 * * *"}], "steps": [{"kind": "leaf", "id": "conto", "uses": "data.transform", "with": {"value": "${1 + 1}"}}]}}
    ```
-3. La risposta dà il `name` del workflow pubblicato: usalo negli strumenti dopo. Nasce spento.
+   Per leggere o contare i record di una collezione c'è `forge.records_query`: `collection_id`, `filters`
+   (in AND, ognuno `{"field", "op", "value"}`, gli stessi operatori delle viste) e `limit` (0 = solo il
+   conteggio). L'uscita del passo è `count` (tutti i record che passano i filtri), `records` e `has_more`:
+   `${urgenti.count}` in un passo `notify.app` dopo manda il numero.
+3. La risposta dà il `name` del workflow pubblicato: usalo negli strumenti dopo. Nasce spento. Per qualche
+   secondo è ancora in pubblicazione: gli strumenti rispondono 409 `workflows_publishing` con `retry_after`,
+   e si riprova dopo quei secondi.
 4. `workflows_set_schedule` per l'orario (cron a 5 campi), `workflows_enable` per accenderlo,
-   `workflows_run_now` per provarlo subito.
-5. `workflows_executions`, poi `workflows_logs` con l'`execution_id` per leggere cosa ha fatto ogni passo.
+   `workflows_run_now` per provarlo subito. Fra due partenze, a mano o dall'orario, c'è una pausa: 429
+   `workflows_trigger_cooldown`, con `retry_after` (i secondi da aspettare) e `cooldown_s` (quanto dura).
+5. `workflows_executions`, poi `workflows_logs` con l'`execution_id` per leggere cosa ha fatto ogni passo:
+   ogni passo che ha girato (fuori da un `foreach`) ha una riga `step.done` col suo `id` in `step`. I dati che
+   un passo produce non vanno nei log; per vederli mettili in un passo `return` alla fine
+   (`{"kind": "return", "payload": {"saluto": "${saluto}"}}`) e leggi il risultato con
+   `workflows_execution`.
 
 Debug: un'esecuzione fallita ha l'errore in `workflows_executions`; il passo che ha sbagliato e i suoi dati
 in `workflows_logs`. Correggi la definizione (`workflows_definition` per rileggerla,
 `workflows_write_definition` con `create: false`) e rilancia con `workflows_run_now`. `workflows_delete`
-cancella un'automazione e non si annulla: solo col sì della persona. Le definizioni gestite da Terraform
+cancella un'automazione e non si annulla: solo col sì della persona. Cancella subito la definizione
+(`workflows_definition` dà 404); il workflow pubblicato e il suo orario li toglie il provisioner dopo, e per
+qualche minuto (circa 4) `workflows_list` lo mostra ancora: la risposta lo dice con `published_removal: "pending"`.
+Non è un errore e non si cancella di nuovo. Le definizioni gestite da Terraform
 non si scrivono né si cancellano da qui (409).
 
 ### Mini app
@@ -260,20 +282,104 @@ non si scrivono né si cancellano da qui (409).
    linea). L'anteprima la vedi solo tu, in sola lettura.
 3. La pubblica un admin con `apps_publish`; chi non è admin chiede la pubblicazione con `drafts_submit`.
    `apps_withdraw` la ritira.
+4. Un'anteprima che non serve più si scarta con `apps_preview_delete` (la pubblicata resta).
+
+### Regole dei lavori notturni
+
+- Dove il tenant le usa (turni, assegnazioni, generatori di lavori, sostituzioni), i job della notte leggono
+  la versione salvata dal workspace o, se non c'è, il file di Mademind. Solo con la chiave admin.
+- `night_rules_list` le elenca; `night_rules_get` dà il documento in uso (`in_use`), le versioni e le
+  bozze. Per cambiarne una: copia `in_use.body`, cambia solo quello che serve, `night_rules_preview`.
+- `night_rules_preview` scrive una bozza che nessun job legge e la controlla con lo schema del job: un
+  documento sbagliato è rifiutato con ogni motivo. Poi il job fa l'anteprima del giorno dopo con la
+  bozza (chi lavora, quali lavori nascono) e scrive l'esito sulla bozza; non ancora (C-2457).
+- Quando l'anteprima di una bozza è arrivata (`preview.page: true` nella versione), `night_rules_get` con
+  `page_version` dà la sua pagina in `page.html`: chi lavora, quali lavori nascono, chi resta senza.
+  Leggila prima di salvare; se manca, `page.missing` dice perché.
+- L'anteprima calcola l'effetto delle regole di assegnazione (`assignment_rules`) e dei generatori di
+  lavori (`task_generators`). Per i turni (`rota_rules`) e le sostituzioni (`cover_proposals`) il job
+  controlla la bozza ma non ne mostra l'effetto: l'esito è `rejected` col motivo e il salvataggio
+  risponde 409 `night_rule_effect_not_previewed`. Quelle si cambiano nel file di Mademind.
+- `night_rules_save` la rende quella che i job usano, solo con l'anteprima riuscita sullo stesso
+  documento e di meno di 24 ore. `night_rules_revert` riporta una versione di prima come bozza nuova,
+  che ripassa dall'anteprima; `night_rules_reset_to_file` torna al file di Mademind.
 
 ### Dashboard, misure, consegne
 
 - `measures_catalog` dice le misure che esistono; `measures_values` i loro valori.
-- `dashboards_create` fa una dashboard personale coi widget sulle misure; `dashboards_append` aggiunge
-  widget senza toccare gli altri.
+- Con la chiave admin, `measures_define` crea o cambia una misura del workspace (chiave `custom_...`):
+  conteggio, somma o media di una collezione per periodo e gruppo, oppure una SELECT sui dati del tenant
+  che restituisce `period`, `value` e, se serve, `dimension`. Il server fa un dry run e rifiuta ciò che
+  non è una SELECT, che legge fuori dai dataset del tenant o che supera il tetto di byte; poi misura le
+  righe e rifiuta chiavi (`keys`) che non sono una chiave. `measures_custom_list` mostra definizione,
+  misure fatte, chi e quando; `measures_remove` la toglie. Nei widget delle dashboard non ancora (C-2386).
+- `reservations_pivot` dà le prenotazioni in tabella pivot o per paese (la mappa), sulle `pivotSources` di
+  `measures_catalog`: solo totali per gruppo, mai righe o nomi degli ospiti. I filtri nominano una dimensione,
+  mai una colonna; gli stessi filtri valgono nei widget `pivot_table` delle dashboard.
+- `dashboards_create` fa una dashboard personale coi widget dell'app (misure, pivot, mappa) e il loro
+  posto sulla griglia; `dashboards_append` aggiunge widget senza toccare gli altri. In `dashboards_update`
+  `{"keep": i}` tiene il widget i di `dashboards_list` com'è: senza, un widget fatto nell'app si perde.
+- Le dashboard condivise, che vede ogni persona del workspace: `dashboards_shared_list`; le cambia un
+  amministratore con `dashboards_shared_upsert` (stessi widget e stesso `keep`) e `dashboards_shared_delete`.
+  Quelle di Mademind in git (source file) si cambiano dopo `ui_adopt_files`.
 - `deliverables_create` pubblica un documento (`kind` `blocks` o `md`, mai HTML); `deliverables_update`
   aggiunge una versione; `deliverables_share` (admin) fa il link pubblico di una consegna `snapshot`.
+
+### Notifiche
+
+`notifications_list` legge la campanella dell'app, solo le tue e solo di questo workspace (risposte
+dell'agente, consegne, esiti e richieste, bozze); `unread: true` per quelle da leggere.
+`notifications_mark_read` con l'id, `notifications_mark_all_read` per tutte. Con `kind` (`outcome`,
+`request`) o `collection` leggi invece gli avvisi delle richieste come le pagine delle richieste
+dell'app, con id numerici. Le preferenze (push ed email per genere, testo nella push, ore di silenzio):
+`notifications_prefs_get`, e `notifications_prefs_update` con i soli campi da cambiare. Valgono per la
+persona su tutta l'azienda, non solo in questo workspace.
+
+### Modifiche alla configurazione (admin)
+
+`activity_config_changes` dà le modifiche a connettori e credenziali, automazioni, agenti e persone, come la
+scheda «Configurazione» della pagina Attività: quando, quale azione, chi (email abbreviata), severità.
+`area` filtra una sezione (`workflows`, `connectors`, `agents`, `members`). Le chiamate delle chiavi MCP
+stanno invece in `activity_list`.
+
+### Connettori (admin)
+
+`connectors_list` dice i connettori del workspace e se la credenziale c'è (`credential.status`:
+`configured`, `missing`, `not_applicable`, `error`), come la pagina Connettori dell'app. `connectors_test`
+prova la connessione di uno (`{"connector": "asana"}`): una lettura leggera verso il fornitore con la
+credenziale salvata, risponde `ok`, `fail` col motivo o `not_testable`. Ogni prova è una chiamata vera al
+fornitore: falla quando serve, non in un ciclo. Il segreto non esce mai; inserire o cambiare una
+credenziale e dare un consenso si fa solo nell'app.
+
+### Aspetto dell'app
+
+`branding_get` dice l'aspetto che la persona vede (`look`: nome, icona, colore, logo, e in `sources` da
+dove viene ognuno) e il nome, il colore e le icone dell'app installata sul telefono o sul computer
+(`installedApp`). L'app installata prende nome e icone dai file del tenant quando Mademind rilascia
+l'app: `branding_update` (admin) cambia `look`, non `installedApp`. Se la persona vuole un altro nome o
+altre icone sull'app installata, dille che lo cambia Mademind. Tutti e due solo su un'installazione
+dedicata a un'azienda (403 `branding_dedicated_only`).
+
+### Cancellazione GDPR ed export (admin)
+
+`gdpr_request` chiede a Mademind una cancellazione GDPR o un export: `erasure_subject` (i dati di una
+persona, con `collection` e `record_id` del record che la riguarda), `erasure_workspace` (tutto il
+workspace) o `export_workspace` (l'export di tutti i dati). Crea solo la richiesta: da qui non si cancella
+e non si esporta niente. La esegue Mademind, dopo averne parlato con l'amministratore, e la richiesta
+resta nel registro attività con chi l'ha fatta. Prima di mandarla chiedi conferma alla persona. Con `note`
+(facoltativa, al massimo 500 caratteri) dici a Mademind qualcosa sulla richiesta, per esempio che è una prova
+da non eseguire: va nella mail a Mademind e nel registro, quindi senza indirizzi email né numeri di telefono
+(400 `gdpr_note_personal_data`).
 
 ### Persone e inviti (admin)
 
 `members_list`, `members_update` (ruolo e gruppi), `invites_create` (nessuna mail parte: la risposta dà il
 codice e la pagina da mandare alla persona), `invites_revoke`, `members_remove`. Il workspace non resta mai
 senza un amministratore (409 `last_admin`).
+
+Un gruppo di persone è un record della collezione `groups`, col nome nel campo `name` (unico): si crea con
+`records_create` su `groups` e si rinomina con `records_update`. I `groupIds` e i `leadGroupIds` di
+`members_update` e `invites_create` sono gli `id` che dà `records_list` su `groups`.
 
 ## Limiti
 
@@ -285,13 +391,17 @@ senza un amministratore (409 `last_admin`).
 
 ## Cosa non si fa da qui, e perché
 
-- **Credenziali e connettori** (password, token, consensi OAuth): restano a chi li possiede, nell'app.
+- **Credenziali e consensi dei connettori** (password, token, consensi OAuth): si inseriscono, si cambiano e si
+  danno solo nell'app, da chi li possiede. Dall'MCP si leggono lo stato e la prova di connessione.
 - **Creare o cancellare agenti, cambiare modello e risorse di un agente**: costi e sicurezza di Mademind.
-  Le istruzioni in più e gli esempi di un agente si cambiano con `agents_update`.
-- **SQL e misure nuove**: le misure le scrive Mademind, perché i numeri devono restare verificati.
+  Le istruzioni in più e gli esempi di un agente si cambiano con `agents_update`, che lo accende e lo spegne
+  (`enabled`).
+- **SQL che scrive o legge fuori dal tenant**: una misura nuova è solo una SELECT sui dati del tenant,
+  controllata dal server prima di salvarla e a ogni lettura.
 - **Rilasci, infrastruttura, migrazioni**: non sono del workspace.
+- **Cancellazione GDPR ed export di tutto**: li esegue Mademind; da qui si chiedono con `gdpr_request`.
 - **Creare chiavi MCP e approvare bozze**: si fa dall'app, da una persona. Una chiave non crea chiavi e
-  non approva il proprio lavoro.
+  non approva il proprio lavoro. Elencarle e revocarle sì.
 
 ## Errori
 
