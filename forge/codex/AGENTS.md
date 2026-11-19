@@ -91,9 +91,11 @@ workspace), mai il segreto; `currentKeyId` è la chiave con cui stai parlando. `
 3. `records_create` per una riga, `records_import_csv` per tante.
    Nel CSV ogni cella si scrive come vuole il suo campo: casella `sì`/`no` (o `true`/`false`, `1`/`0`),
    data `2026-11-18` o `18/11/2026`, data e ora `2026-11-18 09:30` (senza fuso vale UTC), persona con la
-   sua email, scelta multipla e persone o relazioni multiple in un elenco con `;` o `|`. Prova prima con
-   `dry_run`: `errors` dice riga, campo e cosa scrivere. Ogni riga inserita conta un record scritto della
-   quota del giorno (`quotas_list`); oltre 1 MB di CSV, dividi in più chiamate.
+   sua email, relazione con l'id del record collegato o, con `match_by` nel `mapping`, col valore di un
+   suo campo unico (vedi «Da Supabase»), scelta multipla e persone o relazioni multiple in un elenco con
+   `;` o `|`. Prova prima con `dry_run`: `errors` dice riga, campo e cosa scrivere. Ogni riga inserita
+   conta un record scritto della quota del giorno (`quotas_list`); oltre 1 MB di CSV, dividi in più
+   chiamate.
 
 Esempio di campi:
 
@@ -108,6 +110,52 @@ Esempio di campi:
 
 Tipi di campo, perimetri e viste: risorsa `forge://viste/tipi`.
 
+### Un passaggio di stato con chi lo fa e i suoi effetti
+
+Un campo `status` dice, per ogni passaggio in `transitions`, chi lo fa (`who`), il testo del pulsante
+(`label`) e cosa succede quando avviene (`effects`). Sono le regole degli elenchi dichiarati da file, con
+gli stessi controlli: un errore torna in `details` col campo e cosa non va.
+
+- `who`, chi fa il passaggio: `{"role": "admin"}` o `{"role": "member"}`; `{"field": "<campo persona>"}`,
+  la persona scritta in quel campo del record; `{"group": "<nome del gruppo>"}`, i membri del gruppo con
+  quel nome (il nome, non l'id); `{"group_role": "lead", "group_field": "<relazione ai gruppi>"}`, il
+  responsabile del gruppo del record. Senza `who`, o con `"who": null`, lo fa chi può scrivere il record.
+  Un amministratore fa ogni passaggio dichiarato.
+- `requesterField` del campo di stato: il campo persona dove Forge scrive chi crea il record.
+- `effects` di un passaggio: `{"notify": "requester"}` avvisa nell'app chi ha chiesto (serve
+  `requesterField`); `{"update_records": {...}}` cambia record di un altro elenco nella stessa scrittura
+  dello stato. `collection` è l'id dell'altro elenco; `match` dice quale record (campo dell'altro elenco:
+  campo di questo); `set` cosa scrivere (campo dell'altro elenco: campo di questo, o `null` per svuotarlo);
+  `swap` (`with`, `on`, `fields`) scambia quei campi con il record della persona di `with`; `messages`
+  (`not_found`, `more_than_one`, `refused`) è la frase che legge chi preme il pulsante. Se l'altro record
+  non c'è, o ce n'è più di uno, lo stato non cambia e non cambia niente.
+- `createEffects` del campo di stato: `[{"notify": "approvers"}]` avvisa chi approva quando nasce un
+  record. Chi approva è il gruppo di un passaggio che parte dallo stato iniziale con `who.group`.
+- `noticeLabels`: la parola dell'avviso per uno stato (`{"approvata": "approvato"}`).
+
+Una richiesta di ferie che, approvata, scrive l'assenza nei turni di chi ha chiesto:
+
+```json
+{"key": "stato", "label": "Stato", "type": "status", "options": ["in attesa", "approvata", "respinta"],
+ "initial": "in attesa", "requesterField": "richiedente", "createEffects": [{"notify": "approvers"}],
+ "transitions": [
+   {"from": "in attesa", "to": "approvata", "label": "Approva", "who": {"group": "Responsabili turni"},
+    "effects": [{"notify": "requester"},
+                {"update_records": {"collection": "col_...", "match": {"persona": "richiedente", "giorno": "giorno"},
+                                    "set": {"codice": "assenza"},
+                                    "messages": {"not_found": "Il {giorno} {persona} non ha turni."}}}]},
+   {"from": "in attesa", "to": "respinta", "label": "Respingi", "who": {"group": "Responsabili turni"},
+    "effects": [{"notify": "requester"}]}
+ ]}
+```
+
+`collections_list` dà i passaggi interi: leggili prima di cambiarli. Con `collections_update` un campo di
+stato cambia solo in quello che scrivi. Un passaggio rimandato con soli `from` e `to` tiene `who`, `label`
+ed `effects` che aveva; un campo rimandato senza `transitions`, `requesterField`, `createEffects` o
+`noticeLabels` li tiene. Per cambiare chi fa un passaggio scrivi il `who` nuovo; per toglierlo, e
+lasciare il passaggio a chi può scrivere il record, `"who": null`; per togliere gli effetti,
+`"effects": []`. Un passaggio che manca dall'elenco `transitions` che mandi non c'è più.
+
 ### Da Supabase, o da un altro Postgres, a Forge
 
 La persona ti dà lo schema: tabelle, colonne, chiavi esterne, viste, funzioni e trigger (per esempio
@@ -119,8 +167,8 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    Senza, ogni elenco va in bozza (`drafts_propose_collection_schema`) e lo approva un admin dall'app.
 2. `collections_list`: se c'è già un elenco per la stessa cosa (anche uno gestito da file), si usa quello e
    non se ne crea un secondo: due elenchi per la stessa cosa sono due fonti che non vanno d'accordo. Agli
-   elenchi da file non si aggiungono campi da qui: non ancora (C-2237). `collections_list` non dice ancora
-   tutto dello schema, per esempio chi fa i passaggi di stato (C-2238).
+   elenchi da file non si aggiungono campi da qui: non ancora (C-2237). `collections_list` dà lo schema
+   intero, anche chi fa i passaggi di stato e i loro effetti.
 3. **Una tabella diventa un elenco**, una colonna un campo. I tipi sono 12:
 
    | In Postgres | In Forge |
@@ -149,11 +197,14 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
 6. **I dati**: `records_import_csv`, prima con `dry_run`, poi vero, una tabella alla volta nello stesso
    ordine. Una data e ora senza fuso è letta come ora UTC: una colonna `timestamp` senza fuso slitterebbe
    di una o due ore. Prima dell'import aggiungi il fuso giusto (`2026-11-18 09:30+01:00`) o esporta in UTC.
-   Le persone si scrivono con l'email. Una relazione vuole l'id di Forge, non il vecchio id: dopo l'import
-   della tabella madre leggi i suoi record (`records_list`, campi `id` e `supabase_id`) e riscrivi la
-   colonna nel CSV della figlia. Che l'import colleghi da solo col vecchio id: non ancora (C-2291). Una
-   chiave scrive pochi record al giorno (`quotas_list`): per una tabella grande dividi su più giorni o
-   chiedi all'amministratore; una quota alta per il primo caricamento non c'è ancora (C-2350).
+   Le persone si scrivono con l'email. Una relazione si collega col vecchio id: importa prima la tabella
+   madre col suo `supabase_id`, poi nel `mapping` della figlia scrivi la colonna della chiave esterna
+   come `{"field": "fornitore", "match_by": "supabase_id"}`. L'import cerca il record della madre con
+   quel `supabase_id` e scrive il suo id di Forge; `match_by` vuole un campo `unique` della collezione
+   collegata. Una riga con un vecchio id che nella madre non c'è torna in `errors`, con la riga e il
+   valore, e le altre entrano. Una chiave scrive pochi record al giorno (`quotas_list`): per una tabella
+   grande dividi su più giorni o chiedi all'amministratore; una quota alta per il primo caricamento non
+   c'è ancora (C-2350).
 7. **Chi vede quali righe** (le policy di Row Level Security): il perimetro dell'elenco (`scope`) con
    `collections_update`, ruoli e gruppi con `members_update`.
 8. **Una vista SQL** diventa una di queste cose:
@@ -172,15 +223,16 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
      (`records_revisions`);
    - controlla un valore: `required`, `unique`, `options` del campo (per gli intervalli vedi il punto 3);
    - quando una riga cambia stato, cambia altre righe o avvisa chi ha chiesto: un passaggio di stato con
-     chi lo fa e i suoi effetti (`transitions` del campo `status`). Come si scrivono chi e gli effetti, e
-     che non si perdano riscrivendo i passaggi: non ancora (C-2292). Se un elenco ha già dei passaggi, non
-     riscriverli con `collections_update` senza chiedere;
+     chi lo fa e i suoi effetti (`who` ed `effects` delle `transitions` del campo `status`, vedi «Un
+     passaggio di stato con chi lo fa e i suoi effetti»). Il trigger che scrive un'altra tabella diventa un
+     `update_records`; quello che avvisa chi ha chiesto un `notify`;
    - quando una riga cambia, manda una mail o chiama un servizio: un'automazione che parte dal cambio.
      Non ancora: nessuno la fa partire (C-2054);
    - gira a un orario (`pg_cron`): un'automazione a orario, con lo `schedule` della partenza `cron`;
    - è chiamata da fuori, con un webhook: un'automazione che parte da un webhook, non ancora (C-2249);
-   - gira davanti a una persona, che vede la proposta e conferma: una mini app. Le mini app che scrivono
-     record: non ancora (C-2293);
+   - gira davanti a una persona, che vede la proposta e conferma: una mini app. Se scrive record, il
+     manifesto elenca `records.create`, `records.update` o `records.set_status` e, per ogni collezione,
+     i campi che scrive (`write.fields`), vedi «Mini app»;
    - fa un calcolo lungo da sola, come assegnare persone a turni o compiti: le regole dei lavori notturni
      del workspace, dove ci sono: si cambiano con `night_rules_preview` e `night_rules_save` (admin, vedi
      «Regole dei lavori notturni»); l'anteprima del giorno dopo che le giudica non ancora (C-2457); cosa
@@ -242,7 +294,19 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    `steps`), `switch` (`cases` con `when` e `steps`, `default`), `try` (`steps`, `catch`), `parallel`
    (`branches`), `return`. Le espressioni stanno in `${...}`: `${ep.url}`, `${len(righe) > 0}`.
    Nodi e partenze ammessi cambiano da un workspace all'altro: li elenca `forge://flussi/nodi`, e il rifiuto
-   `workflow_nodes_not_allowed` li ripete in `allowed_nodes` e `allowed_triggers`. Lo `schedule` di una
+   `workflow_nodes_not_allowed` li ripete in `allowed_nodes` e `allowed_triggers`. Prima di scrivere, Forge
+   controlla quello che il compilatore rifiuterebbe: un campo obbligatorio di `with` che manca, o una chiave
+   di `runtime.config` o `runtime.secrets` che il nodo vuole e che il workspace non fissa da sé (per esempio
+   `notify.app` vuole `deep_link`, `agent.call` vuole `runtime.config.agent_adapter_url`). Il rifiuto è 400
+   `workflow_definition_incomplete`, e `missing` dice per ognuno il passo (`step`), il nodo (`uses`) e il
+   campo (`field`); `forge://flussi/nodi` elenca campi e chiavi di ogni nodo. Niente è stato scritto: aggiungi
+   i campi e riscrivi. Poi Forge compila la definizione a secco, col compilatore che la pubblicherà: quello
+   che rifiuta (una partenza almeno in
+   `triggers`; `forge.records_upsert` vuole `records` o `records_json`; in `notify.app` `deep_link` è un
+   percorso letterale che inizia con `/`, `recipients` sono e-mail letterali, `severity` è `info`, `warning`
+   o `critical`) è 400 `workflow_definition_invalid`, ed `errors` dice per ognuno il passo (`step`, null se è
+   la definizione intera), il nodo (`uses`), il campo (`field`) e il testo del compilatore (`error`). Anche
+   qui niente è stato scritto. Lo `schedule` di una
    partenza `cron` è l'orario con cui il workflow nasce, nel fuso `timezone` (di base Europe/Rome); dopo
    lo cambia solo `workflows_set_schedule`, anche il fuso con `time_zone`. Una definizione minima,
    con un passo solo che fa un conto:
@@ -255,8 +319,13 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    conteggio). L'uscita del passo è `count` (tutti i record che passano i filtri), `records` e `has_more`:
    `${urgenti.count}` in un passo `notify.app` dopo manda il numero.
 3. La risposta dà il `name` del workflow pubblicato: usalo negli strumenti dopo. Nasce spento. Per qualche
-   secondo è ancora in pubblicazione: gli strumenti rispondono 409 `workflows_publishing` con `retry_after`,
-   e si riprova dopo quei secondi.
+   secondo è ancora in pubblicazione (`provisioning_state: "pending"` nella risposta): gli strumenti
+   rispondono 409 `workflows_publishing` con `retry_after`, e si riprova dopo quei secondi. Se la
+   pubblicazione fallisce, `workflows_list` mostra il workflow in `unpublished` con `provisioning_state`
+   `deploy_failed` e `compile_errors`, il motivo del rifiuto, e `workflows_run_now` o `workflows_rerun` su quel
+   nome rispondono 409 `workflow_publish_failed` con gli stessi `compile_errors`: correggi la definizione e
+   riscrivila con `create: false`. Un `name` che il workspace non ha, né pubblicato né scritto, è 404
+   `workflow_not_found`: rileggilo con `workflows_list`.
 4. `workflows_set_schedule` per l'orario (cron a 5 campi), `workflows_enable` per accenderlo,
    `workflows_run_now` per provarlo subito. Fra due partenze, a mano o dall'orario, c'è una pausa: 429
    `workflows_trigger_cooldown`, con `retry_after` (i secondi da aspettare) e `cooldown_s` (quanto dura).
@@ -278,8 +347,13 @@ non si scrivono né si cancellano da qui (409).
 ### Mini app
 
 1. Leggi `forge://mini-app/kit`: manifesto, cosa può fare il codice, cosa è vietato.
+   Un'app che scrive elenca `records.create`, `records.update` o `records.set_status` fra le operazioni e
+   dichiara per la collezione i campi che legge (`read.fields`) e quelli che scrive (`write.fields`).
+   Scrive coi permessi di chi la guarda: un passaggio di stato che la persona non può fare è rifiutato
+   come nell'app. Un campo fuori da `write.fields`, o una collezione senza `write`, dà 403.
 2. `apps_preview_upload` con `manifest` (l'`app.yaml` in JSON) e `content` (l'HTML costruito, tutto in
-   linea). L'anteprima la vedi solo tu, in sola lettura.
+   linea). L'anteprima la vedi solo tu, in sola lettura: anche un'app che dichiara scritture lì riceve
+   403 `app_preview_read_only`.
 3. La pubblica un admin con `apps_publish`; chi non è admin chiede la pubblicazione con `drafts_submit`.
    `apps_withdraw` la ritira.
 4. Un'anteprima che non serve più si scarta con `apps_preview_delete` (la pubblicata resta).
