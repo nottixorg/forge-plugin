@@ -368,7 +368,8 @@ non si scrivono né si cancellano da qui (409).
    linea). L'anteprima la vedi solo tu, in sola lettura: anche un'app che dichiara scritture lì riceve
    403 `app_preview_read_only`.
 3. La pubblica un admin con `apps_publish`; chi non è admin chiede la pubblicazione con `drafts_submit`.
-   `apps_withdraw` la ritira.
+   `apps_withdraw` la ritira. `apps_list` elenca le pubblicate, con `include_withdrawn` anche le ritirate:
+   un id ritirato resta preso (410 `app_withdrawn` a una nuova pubblicazione).
 4. Un'anteprima che non serve più si scarta con `apps_preview_delete` (la pubblicata resta).
 
 ### Regole dei lavori notturni
