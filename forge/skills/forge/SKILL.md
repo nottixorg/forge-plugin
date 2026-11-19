@@ -57,8 +57,8 @@ Il server ha un prompt per ognuna, con i passi: `crea_elenco`, `costruisci_fluss
   prova con `workflows_run_now`, lettura con `workflows_executions` e `workflows_logs`, orario con
   `workflows_set_schedule`, `workflows_enable` col sì della persona. Una pubblicazione fallita è in
   `workflows_list`, `unpublished`, con `deploy_failed` e `compile_errors`, e `workflows_run_now` su quel
-  nome è un 409 `workflow_publish_failed` con gli stessi `compile_errors`; un nome che non c'è è 404
-  `workflow_not_found`.
+  nome è un 409 `workflow_publish_failed` con gli stessi `compile_errors`; una cancellazione fallita
+  (`delete_failed`) è un 409 `workflow_delete_failed`; un nome che non c'è è 404 `workflow_not_found`.
 - **Una mini app**: `forge://mini-app/kit`, `apps_preview_upload`, poi `apps_publish` o `drafts_submit`.
   Se scrive record, il manifesto elenca `records.create`, `records.update` o `records.set_status` e i
   campi che scrive per ogni collezione (`write.fields`); scrive coi permessi di chi la guarda e

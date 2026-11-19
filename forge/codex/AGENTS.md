@@ -293,6 +293,11 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    `{"kind": "leaf", "id": "scrivi", "uses": "<nodo>", "with": {...}}`; i blocchi sono `foreach` (`in`, `as`,
    `steps`), `switch` (`cases` con `when` e `steps`, `default`), `try` (`steps`, `catch`), `parallel`
    (`branches`), `return`. Le espressioni stanno in `${...}`: `${ep.url}`, `${len(righe) > 0}`.
+   Valori fissi del flusso (un URL, un id) vanno in `vars`, accanto a `steps`: `{"AGENT_URL":
+   "<url del servizio>"}`, letti con `${AGENT_URL}`. I nomi sono lettere, cifre e `_`; `tenant`, `project` e
+   `run_date` li dà Forge. Un `http.request` con `auth: "oidc"` vuole un `url` statico: un letterale, oppure
+   `${VAR}` con `VAR` in `vars` e di valore letterale. Le `vars` ci sono solo in `forge.workflows/v2`;
+   `workflows_definition` le rilegge.
    Nodi e partenze ammessi cambiano da un workspace all'altro: li elenca `forge://flussi/nodi`, e il rifiuto
    `workflow_nodes_not_allowed` li ripete in `allowed_nodes` e `allowed_triggers`. Prima di scrivere, Forge
    controlla quello che il compilatore rifiuterebbe: un campo obbligatorio di `with` che manca, o una chiave
@@ -304,8 +309,13 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    che rifiuta (una partenza almeno in
    `triggers`; `forge.records_upsert` vuole `records` o `records_json`; in `notify.app` `deep_link` è un
    percorso letterale che inizia con `/`, `recipients` sono e-mail letterali, `severity` è `info`, `warning`
-   o `critical`) è 400 `workflow_definition_invalid`, ed `errors` dice per ognuno il passo (`step`, null se è
-   la definizione intera), il nodo (`uses`), il campo (`field`) e il testo del compilatore (`error`). Anche
+   o `critical`; lo `schedule` di una partenza `cron` ha 5 campi e non riparte prima di 15 minuti, e
+   `timezone` è un fuso che esiste; dove Forge legge i permessi del tenant, i dataset, i secret, i job, gli
+   host degli URL e le operazioni che scrivono sono fra quelli ammessi) è 400 `workflow_definition_invalid`,
+   ed `errors` dice per ognuno il passo (`step`, null se è
+   la definizione intera o una var), il nodo (`uses`), il campo (`field`) e il testo del compilatore (`error`).
+   Un'espressione rifiutata in un blocco ha il passo del blocco e il campo: `cases.<i>.when` di uno
+   `switch`, `in` di un `foreach`, `payload.<chiave>` di un `return`, `vars.<nome>` per una var. Anche
    qui niente è stato scritto. Lo `schedule` di una
    partenza `cron` è l'orario con cui il workflow nasce, nel fuso `timezone` (di base Europe/Rome); dopo
    lo cambia solo `workflows_set_schedule`, anche il fuso con `time_zone`. Una definizione minima,
@@ -324,8 +334,10 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    pubblicazione fallisce, `workflows_list` mostra il workflow in `unpublished` con `provisioning_state`
    `deploy_failed` e `compile_errors`, il motivo del rifiuto, e `workflows_run_now` o `workflows_rerun` su quel
    nome rispondono 409 `workflow_publish_failed` con gli stessi `compile_errors`: correggi la definizione e
-   riscrivila con `create: false`. Un `name` che il workspace non ha, né pubblicato né scritto, è 404
-   `workflow_not_found`: rileggilo con `workflows_list`.
+   riscrivila con `create: false`. Se il provisioner non è riuscito a togliere la versione pubblicata prima
+   (`provisioning_state` `delete_failed`), gli stessi strumenti rispondono 409 `workflow_delete_failed` con
+   `compile_errors`: riscrivi la definizione con `create: false` per pubblicarla di nuovo. Un `name` che il
+   workspace non ha, né pubblicato né scritto, è 404 `workflow_not_found`: rileggilo con `workflows_list`.
 4. `workflows_set_schedule` per l'orario (cron a 5 campi), `workflows_enable` per accenderlo,
    `workflows_run_now` per provarlo subito. Fra due partenze, a mano o dall'orario, c'è una pausa: 429
    `workflows_trigger_cooldown`, con `retry_after` (i secondi da aspettare) e `cooldown_s` (quanto dura).
