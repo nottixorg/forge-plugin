@@ -18,6 +18,7 @@ Regole:
 - Le quote si leggono con quotas_list.
 - Per portare uno schema da Supabase o da un altro Postgres: la ricetta in forge://guida, o il prompt porta_schema.
 - Un rifiuto dice, dopo il JSON, cosa è successo e «Cosa fare»: seguilo prima di riprovare.
+- agents_ask con status "in_progress": l'agente sta ancora rispondendo. Non rifare la domanda: chiama agents_conversation_get col session_id della risposta, che aspetta fino a 30 secondi; se dà ancora in_progress, richiamalo.
 
 Risorse da leggere: forge://guida (la guida intera, con le ricette), forge://errori (cosa vuol dire ogni rifiuto e cosa fare), forge://flussi/nodi (nodi e partenze ammessi nei workflow), forge://viste/tipi (tipi di campo, di vista e filtri), forge://mini-app/kit. I prompt danno le ricette passo per passo.
 
@@ -166,9 +167,11 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
 1. `identity_me`: per creare elenchi serve la chiave di un amministratore con i poteri da amministratore.
    Senza, ogni elenco va in bozza (`drafts_propose_collection_schema`) e lo approva un admin dall'app.
 2. `collections_list`: se c'è già un elenco per la stessa cosa (anche uno gestito da file), si usa quello e
-   non se ne crea un secondo: due elenchi per la stessa cosa sono due fonti che non vanno d'accordo. Agli
-   elenchi da file non si aggiungono campi da qui: non ancora (C-2237). `collections_list` dà lo schema
-   intero, anche chi fa i passaggi di stato e i loro effetti.
+   non se ne crea un secondo: due elenchi per la stessa cosa sono due fonti che non vanno d'accordo. Un
+   elenco da file (`source: file`) non si cambia da qui finché il workspace non lo prende in carico:
+   `collections_adopt` (admin) lo fa diventare del workspace, una volta sola, e git non lo riapplica più;
+   da lì `collections_update` ne cambia campi, passaggi di stato, viste e perimetro. `collections_list` dà
+   lo schema intero, anche chi fa i passaggi di stato e i loro effetti.
 3. **Una tabella diventa un elenco**, una colonna un campo. I tipi sono 12:
 
    | In Postgres | In Forge |
@@ -185,10 +188,10 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    | chiave esterna verso utenti o profili | `person` (le persone del workspace) |
    | un indirizzo web | `url` |
 
-   Non ancora: l'ora senza giorno, come `time` (un turno che comincia alle 07:00): oggi va in `text`
-   (C-2296). `json`/`jsonb` va in `long_text` e non si filtra dentro; il valore predefinito di una colonna,
+   Non ancora: l'ora senza giorno, come `time` (un turno che comincia alle 07:00): oggi va in `text`.
+   `json`/`jsonb` va in `long_text` e non si filtra dentro; il valore predefinito di una colonna,
    un vincolo unico su più colonne insieme e un controllo di intervallo (`check (ore between 0 and 12)`)
-   non ci sono (C-2351).
+   non ci sono.
 4. **La chiave primaria** diventa l'id del record, che sceglie Forge. Il vecchio id va in un campo di
    testo `unique` e `required` (per esempio `supabase_id`): serve a collegare le relazioni, a ripetere
    l'import senza doppioni (una riga col valore unico già presente si salta) e a confrontare i due sistemi.
@@ -202,20 +205,24 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    come `{"field": "fornitore", "match_by": "supabase_id"}`. L'import cerca il record della madre con
    quel `supabase_id` e scrive il suo id di Forge; `match_by` vuole un campo `unique` della collezione
    collegata. Una riga con un vecchio id che nella madre non c'è torna in `errors`, con la riga e il
-   valore, e le altre entrano. Una chiave scrive pochi record al giorno (`quotas_list`): per una tabella
-   grande dividi su più giorni o chiedi all'amministratore; una quota alta per il primo caricamento non
-   c'è ancora (C-2350).
+   valore, e le altre entrano. Una chiave scrive pochi record al giorno: `quotas_list` dice il massimo e
+   quanto resta. Per una tabella grande dividi su più giorni, oppure l'amministratore chiede a Mademind una
+   quota più alta per il primo caricamento: la alza Mademind, per ogni chiave del workspace, e da qui non
+   si cambia.
 7. **Chi vede quali righe** (le policy di Row Level Security): il perimetro dell'elenco (`scope`) con
    `collections_update`, ruoli e gruppi con `members_update`.
 8. **Una vista SQL** diventa una di queste cose:
-   - filtra, ordina o raggruppa una tabella: una vista dell'elenco (`views_replace_shared`). Sugli elenchi
-     da file non ancora (C-2234);
+   - filtra, ordina o raggruppa una tabella: una vista dell'elenco (`views_replace_shared`), anche su un
+     elenco da file, come nell'app;
    - conta o somma: `records_aggregate`; una misura salvata, per periodo e gruppo: `measures_define` (admin),
-     vedi «Dashboard, misure, consegne». Nei widget delle dashboard non ancora (C-2386);
+     vedi «Dashboard, misure, consegne». `dashboards_create` la mette in un widget, e l'app lo
+     disegna coi valori di una misura su una collezione; il widget di una misura in SQL nell'app resta
+     vuoto: i suoi valori si leggono con `measures_values`;
    - unisce più tabelle in un elenco o in un calendario: una pagina (`pages_upsert`), vedi «Pagine, menu e
      home dell'app»;
-   - unisce più tabelle in una schermata su misura: una mini app. Non ancora per intero: il manifesto non
-     nomina un elenco creato da qui (C-2057) e l'app pubblicata non compare nel menu (C-2192);
+   - unisce più tabelle in una schermata su misura: una mini app. Pubblicata con `apps_publish`, compare
+     nel menu dell'app alle persone a cui il manifesto la rivolge. Non ancora per intero: il manifesto non
+     nomina un elenco creato da qui;
    - un riepilogo ricalcolato ogni notte: un'automazione a orario che scrive un elenco di riepilogo, con
      l'orario scritto nella partenza `cron` (poi lo cambia `workflows_set_schedule`).
 9. **Una funzione o un trigger** diventa una di queste cose:
@@ -227,17 +234,17 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
      passaggio di stato con chi lo fa e i suoi effetti»). Il trigger che scrive un'altra tabella diventa un
      `update_records`; quello che avvisa chi ha chiesto un `notify`;
    - quando una riga cambia, manda una mail o chiama un servizio: un'automazione che parte dal cambio.
-     Non ancora: nessuno la fa partire (C-2054);
+     Non ancora: nessuno la fa partire;
    - gira a un orario (`pg_cron`): un'automazione a orario, con lo `schedule` della partenza `cron`;
-   - è chiamata da fuori, con un webhook: un'automazione che parte da un webhook, non ancora (C-2249);
+   - è chiamata da fuori, con un webhook: un'automazione che parte da un webhook, non ancora;
    - gira davanti a una persona, che vede la proposta e conferma: una mini app. Se scrive record, il
      manifesto elenca `records.create`, `records.update` o `records.set_status` e, per ogni collezione,
      i campi che scrive (`write.fields`), vedi «Mini app»;
    - fa un calcolo lungo da sola, come assegnare persone a turni o compiti: le regole dei lavori notturni
      del workspace, dove ci sono: si cambiano con `night_rules_preview` e `night_rules_save` (admin, vedi
-     «Regole dei lavori notturni»); l'anteprima del giorno dopo che le giudica non ancora (C-2457); cosa
-     il motore di assegnazione sa esprimere: non ancora (C-2294). Generare da zero la
-     turnazione del mese: non ancora, è da decidere dove (C-2352). Nessun passo di un'automazione esegue
+     «Regole dei lavori notturni»), dopo l'anteprima del giorno dopo che le giudica; cosa
+     il motore di assegnazione sa esprimere: non ancora. Generare da zero la
+     turnazione del mese: non ancora, è da decidere dove. Nessun passo di un'automazione esegue
      codice del cliente.
 10. Prima di spegnere il vecchio database, la persona confronta i due risultati sugli stessi giorni.
 
@@ -248,7 +255,9 @@ Il prompt `porta_schema` dà questi passi con lo schema della persona.
 - Le tue: `views_replace_personal` (l'elenco intero delle tue viste su quella collezione).
 - Quelle di tutti: leggi prima `views_list`, poi manda l'elenco intero con `views_replace_shared` (admin)
   o `drafts_propose_shared_views` (gli altri). Una vista che non rimandi sparisce.
-- Le collezioni dichiarate da file (le gestisce Mademind in git) non prendono viste condivise dall'MCP: 409.
+- Le collezioni dichiarate da file (le gestisce Mademind in git) prendono viste condivise dall'MCP, come
+  nell'app: il prossimo aggiornamento del file da Mademind le riscrive. Per tenerle, il workspace prende in
+  carico la collezione con `collections_adopt`.
 
 ### Pagine, menu e home dell'app
 
@@ -347,6 +356,8 @@ Solo con la chiave di un amministratore con i poteri da amministratore.
    un passo produce non vanno nei log; per vederli mettili in un passo `return` alla fine
    (`{"kind": "return", "payload": {"saluto": "${saluto}"}}`) e leggi il risultato con
    `workflows_execution`.
+   I log arrivano qualche secondo dopo la fine: subito dopo SUCCEEDED la lista può essere vuota e la
+   risposta ha `note`. Riprova dopo 10-30 secondi prima di dire che non ci sono log.
 
 Debug: un'esecuzione fallita ha l'errore in `workflows_executions`; il passo che ha sbagliato e i suoi dati
 in `workflows_logs`. Correggi la definizione (`workflows_definition` per rileggerla,
@@ -380,7 +391,7 @@ non si scrivono né si cancellano da qui (409).
   bozze. Per cambiarne una: copia `in_use.body`, cambia solo quello che serve, `night_rules_preview`.
 - `night_rules_preview` scrive una bozza che nessun job legge e la controlla con lo schema del job: un
   documento sbagliato è rifiutato con ogni motivo. Poi il job fa l'anteprima del giorno dopo con la
-  bozza (chi lavora, quali lavori nascono) e scrive l'esito sulla bozza; non ancora (C-2457).
+  bozza (chi lavora, quali lavori nascono) e scrive l'esito sulla bozza in qualche minuto.
 - Quando l'anteprima di una bozza è arrivata (`preview.page: true` nella versione), `night_rules_get` con
   `page_version` dà la sua pagina in `page.html`: chi lavora, quali lavori nascono, chi resta senza.
   Leggila prima di salvare; se manca, `page.missing` dice perché.
@@ -391,19 +402,37 @@ non si scrivono né si cancellano da qui (409).
 - `night_rules_save` la rende quella che i job usano, solo con l'anteprima riuscita sullo stesso
   documento e di meno di 24 ore. `night_rules_revert` riporta una versione di prima come bozza nuova,
   che ripassa dall'anteprima; `night_rules_reset_to_file` torna al file di Mademind.
+- Per tornare alla regola di prima guarda `source` prima di salvare: se era `file`,
+  `night_rules_reset_to_file`, subito e senza anteprima; se era `workspace`, `night_rules_revert` con la
+  versione che era in `in_use.version`, poi anteprima e `night_rules_save`.
+- Una bozza che non salverai (una prova, un cambio lasciato perdere) si scarta con `night_rules_discard`:
+  esce dalle bozze di `night_rules_list` e nessuno può più salvarla. Una versione salvata non si scarta.
 
 ### Dashboard, misure, consegne
 
-- `measures_catalog` dice le misure che esistono; `measures_values` i loro valori.
+- `measures_catalog` dice le misure che esistono; `measures_values` i loro valori. Si chiedono con `keys`,
+  le chiavi delle misure che servono: senza, arrivano tutte, e su un workspace con tante misure la risposta
+  oltre 60.000 caratteri è rifiutata (`measures_values_too_large`, con le chiavi in `measure_keys`).
+  Lo stesso tetto vale con `keys`: una misura divisa per struttura e dimensione può superarlo da sola, e il
+  rifiuto (`measures_values_keys_too_large`) dice in `key_chars` quanto pesa ogni chiave chiesta. Per una
+  chiave troppo grande da sola il rifiuto dà anche `dimension_chunks`, i pezzi in cui leggerla, e
+  `dimension_labels`, il nome di ogni dimensione (la struttura). Si legge per intero chiamando quella chiave
+  con `dimension_ids` uguale a un pezzo, un pezzo per volta, finché sono finiti. `dimension_ids` (solo con
+  `keys`) tiene le righe di quelle dimensioni: un id vale per sé e per gli id che cominciano con lui e `|`,
+  così `andamento_mensile` (`struttura|metrica`) si taglia per struttura, e `__totale__` è il totale di tutte.
 - Con la chiave admin, `measures_define` crea o cambia una misura del workspace (chiave `custom_...`):
   conteggio, somma o media di una collezione per periodo e gruppo, oppure una SELECT sui dati del tenant
   che restituisce `period`, `value` e, se serve, `dimension`. Il server fa un dry run e rifiuta ciò che
   non è una SELECT, che legge fuori dai dataset del tenant o che supera il tetto di byte; poi misura le
   righe e rifiuta chiavi (`keys`) che non sono una chiave. `measures_custom_list` mostra definizione,
-  misure fatte, chi e quando; `measures_remove` la toglie. Nei widget delle dashboard non ancora (C-2386).
+  misure fatte, chi e quando; `measures_remove` la toglie. `dashboards_create`, `dashboards_append`,
+  `dashboards_update` e `dashboards_shared_upsert` accettano una misura `custom_...` in un widget: l'app
+  disegna i valori di una misura su una collezione, mentre il widget di una misura in SQL resta vuoto
+  e i suoi valori si leggono con `measures_values`.
 - `reservations_pivot` dà le prenotazioni in tabella pivot o per paese (la mappa), sulle `pivotSources` di
   `measures_catalog`: solo totali per gruppo, mai righe o nomi degli ospiti. I filtri nominano una dimensione,
-  mai una colonna; gli stessi filtri valgono nei widget `pivot_table` delle dashboard.
+  mai una colonna; gli stessi filtri valgono nei widget `pivot_table` delle dashboard. Su una dimensione mese
+  il valore è `AAAA-MM`, come le colonne che il pivot restituisce (`2026-11`), con `eq`, `neq`, `gte` o `lte`.
 - `dashboards_create` fa una dashboard personale coi widget dell'app (misure, pivot, mappa) e il loro
   posto sulla griglia; `dashboards_append` aggiunge widget senza toccare gli altri. In `dashboards_update`
   `{"keep": i}` tiene il widget i di `dashboards_list` com'è: senza, un widget fatto nell'app si perde.
@@ -412,6 +441,25 @@ non si scrivono né si cancellano da qui (409).
   Quelle di Mademind in git (source file) si cambiano dopo `ui_adopt_files`.
 - `deliverables_create` pubblica un documento (`kind` `blocks` o `md`, mai HTML); `deliverables_update`
   aggiunge una versione; `deliverables_share` (admin) fa il link pubblico di una consegna `snapshot`.
+
+### Domande all'agente
+
+`agents_ask` fa una domanda all'agente del workspace come la persona della chiave; con il `session_id`
+di una risposta continua quella conversazione. Una risposta con grafici e strumenti può richiedere decine di
+secondi, a volte qualche minuto (un confronto fra due mesi per struttura e canale ne ha chiesti quasi
+quattro). Lo strumento non tiene la chiamata oltre 45 secondi, perché un client MCP la chiude dopo
+circa 60 e la domanda ripetuta aprirebbe una seconda conversazione uguale. Se l'agente non ha finito, la
+risposta è `{"status": "in_progress", "session_id": …, "next": …}` e l'agente continua a lavorare:
+- **non rifare la domanda**;
+- chiama `agents_conversation_get` con quel `session_id`. La conversazione esiste già, anche per una
+  domanda nuova, e compare in `agents_conversations_list` con la domanda come titolo. Mentre l'agente
+  lavora, lo strumento aspetta la risposta fino a 30 secondi e risponde appena è pronta:
+  - `status: "answered"`: i messaggi, e l'ultimo dell'agente (`assistant`) è la risposta;
+  - `status: "in_progress"`: l'agente lavora ancora, nessun messaggio. Richiama lo stesso strumento;
+  - `status: "failed"`: l'agente non è riuscito a rispondere. La domanda si può rifare con `agents_ask` e
+    lo stesso `session_id`: continua la conversazione, non ne apre una seconda.
+
+Un turno dura al massimo 10 minuti: dopo, la conversazione non è più `in_progress`.
 
 ### Notifiche
 
@@ -461,8 +509,10 @@ da non eseguire: va nella mail a Mademind e nel registro, quindi senza indirizzi
 
 ### Persone e inviti (admin)
 
-`members_list`, `members_update` (ruolo e gruppi), `invites_create` (nessuna mail parte: la risposta dà il
-codice e la pagina da mandare alla persona), `invites_revoke`, `members_remove`. Il workspace non resta mai
+`members_list`, `members_update` (ruolo e gruppi), `invites_create` (alla persona parte una mail col link
+d'invito, dal mittente del workspace; con `sendEmail: false` non parte e il link, che la risposta dà comunque,
+lo consegni tu), `invites_revoke`, `members_remove`. Prima di invitare, rileggi l'indirizzo con la persona: la
+mail parte davvero. Il workspace non resta mai
 senza un amministratore (409 `last_admin`).
 
 Un gruppo di persone è un record della collezione `groups`, col nome nel campo `name` (unico): si crea con
