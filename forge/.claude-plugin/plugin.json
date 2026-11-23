@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Lavora su Forge di Mademind da Claude Code: collezioni, record, viste, bozze, automazioni, dashboard, consegne e mini app del tuo workspace, con la tua chiave MCP personale.",
   "author": { "name": "Mademind" },
   "keywords": ["forge", "mademind", "mcp"]

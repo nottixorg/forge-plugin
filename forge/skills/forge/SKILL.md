@@ -32,6 +32,10 @@ solo nel suo workspace, e ogni chiamata finisce nel registro attività che vede 
   amministratore dall'app. Dillo alla persona.
 - Accendere un'automazione, pubblicare una mini app, condividere fuori una consegna: solo col sì della
   persona.
+- Una regola dei lavori notturni: `night_rules_save` solo dopo `night_rules_preview`. Mostra alla persona
+  l'esito dell'anteprima, poi chiedi in un messaggio a parte se salvare, e salva solo dopo un sì dato dopo
+  l'anteprima. Se la richiesta diceva già «poi salvala», quel sì non basta: la persona non aveva ancora
+  visto l'effetto.
 - Credenziali, connettori, agenti nuovi, SQL e rilasci non si fanno dall'MCP: si fanno nell'app o li fa
   Mademind.
 

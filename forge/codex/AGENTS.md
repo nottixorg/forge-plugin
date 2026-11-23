@@ -14,13 +14,13 @@ Regole:
 - Leggi prima di scrivere: views_list prima di sostituire le viste, records_get prima di cambiare un record.
 - Senza i poteri da amministratore uno schema o le viste condivise si propongono in bozza (drafts_propose_*), poi drafts_submit: la approva un admin dall'app.
 - Una cancellazione non torna indietro: chiedi conferma alla persona prima di ogni strumento segnato distruttivo.
-- Credenziali e consensi dei connettori, agenti nuovi, SQL e rilasci non si fanno da qui: lo stato dei connettori si legge (connectors_list).
-- Le quote si leggono con quotas_list.
+- night_rules_save: prima mostra l'esito di night_rules_preview, poi chiedi a parte; vale solo un sì dato dopo.
+- Credenziali e consensi dei connettori, agenti nuovi, SQL e rilasci non si fanno da qui: lo stato dei connettori si legge (connectors_list), le quote con quotas_list.
 - Per portare uno schema da Supabase o da un altro Postgres: la ricetta in forge://guida, o il prompt porta_schema.
 - Un rifiuto dice, dopo il JSON, cosa è successo e «Cosa fare»: seguilo prima di riprovare.
 - agents_ask con status "in_progress": l'agente sta ancora rispondendo. Non rifare la domanda: chiama agents_conversation_get col session_id della risposta, che aspetta fino a 30 secondi; se dà ancora in_progress, richiamalo.
 
-Risorse da leggere: forge://guida (la guida intera, con le ricette), forge://errori (cosa vuol dire ogni rifiuto e cosa fare), forge://flussi/nodi (nodi e partenze ammessi nei workflow), forge://viste/tipi (tipi di campo, di vista e filtri), forge://mini-app/kit. I prompt danno le ricette passo per passo.
+Risorse da leggere: forge://guida (tutta, con le ricette), forge://errori (ogni rifiuto e cosa fare), forge://flussi/nodi (nodi e partenze dei workflow), forge://viste/tipi (tipi di campo, di vista e filtri), forge://mini-app/kit. I prompt danno le ricette passo per passo.
 
 ## Le parole
 
@@ -172,7 +172,7 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    `collections_adopt` (admin) lo fa diventare del workspace, una volta sola, e git non lo riapplica più;
    da lì `collections_update` ne cambia campi, passaggi di stato, viste e perimetro. `collections_list` dà
    lo schema intero, anche chi fa i passaggi di stato e i loro effetti.
-3. **Una tabella diventa un elenco**, una colonna un campo. I tipi sono 12:
+3. **Una tabella diventa un elenco**, una colonna un campo. I tipi sono 13:
 
    | In Postgres | In Forge |
    |---|---|
@@ -181,6 +181,7 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    | `boolean` | `checkbox` |
    | `date` | `date` |
    | `timestamptz`, `timestamp` | `datetime` (vedi il punto 6 sul fuso) |
+   | `time` (l'ora senza giorno: un turno che comincia alle 07:00) | `time`, scritto `HH:MM`; l'import legge anche `07:00:00` |
    | un `enum`, o un `check (x in (...))` | `single_select` con le `options` |
    | un array di valori (`text[]`, `enum[]`) | `multi_select` |
    | una colonna con stati e passaggi ammessi | `status` con `options`, `initial` e `transitions` |
@@ -188,8 +189,7 @@ Quello che oggi Forge non fa lo dici «non ancora», col compito che lo porterà
    | chiave esterna verso utenti o profili | `person` (le persone del workspace) |
    | un indirizzo web | `url` |
 
-   Non ancora: l'ora senza giorno, come `time` (un turno che comincia alle 07:00): oggi va in `text`.
-   `json`/`jsonb` va in `long_text` e non si filtra dentro; il valore predefinito di una colonna,
+   Non ancora: `json`/`jsonb` va in `long_text` e non si filtra dentro; il valore predefinito di una colonna,
    un vincolo unico su più colonne insieme e un controllo di intervallo (`check (ore between 0 and 12)`)
    non ci sono.
 4. **La chiave primaria** diventa l'id del record, che sceglie Forge. Il vecchio id va in un campo di
@@ -402,6 +402,11 @@ non si scrivono né si cancellano da qui (409).
 - `night_rules_save` la rende quella che i job usano, solo con l'anteprima riuscita sullo stesso
   documento e di meno di 24 ore. `night_rules_revert` riporta una versione di prima come bozza nuova,
   che ripassa dall'anteprima; `night_rules_reset_to_file` torna al file di Mademind.
+- Prima di `night_rules_save`, sempre: mostra alla persona l'esito dell'anteprima (chi lavora, quali
+  lavori nascono, chi resta senza, o i motivi del rifiuto), poi chiedi in un messaggio a parte se salvare,
+  e salva solo dopo un sì dato dopo l'anteprima. Vale anche quando la richiesta diceva già di salvare
+  («provala e poi salvala»): quel sì è arrivato prima che la persona vedesse l'effetto, e non basta.
+  Finché l'anteprima non è arrivata, dillo e aspetta.
 - Per tornare alla regola di prima guarda `source` prima di salvare: se era `file`,
   `night_rules_reset_to_file`, subito e senza anteprima; se era `workspace`, `night_rules_revert` con la
   versione che era in `in_use.version`, poi anteprima e `night_rules_save`.
