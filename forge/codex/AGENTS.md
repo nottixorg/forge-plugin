@@ -377,8 +377,10 @@ non si scrivono né si cancellano da qui (409).
    come nell'app. Un campo fuori da `write.fields`, o una collezione senza `write`, dà 403.
 2. `apps_preview_upload` con `manifest` (l'`app.yaml` in JSON) e `content` (l'HTML costruito, tutto in
    linea). L'anteprima la vedi solo tu, in sola lettura: anche un'app che dichiara scritture lì riceve
-   403 `app_preview_read_only`.
-3. La pubblica un admin con `apps_publish`; chi non è admin chiede la pubblicazione con `drafts_submit`.
+   403 `app_preview_read_only`. La risposta porta `page`: il percorso che, dopo l'indirizzo dell'app di
+   Forge, apre l'anteprima nel browser. Si apre solo per te; un'altra persona riceve un rifiuto.
+3. La pubblica un admin con `apps_publish`; chi non è admin chiede la pubblicazione con `drafts_submit`,
+   e l'admin la approva o la respinge dall'app, nella pagina delle bozze: approvata, l'app è pubblicata.
    `apps_withdraw` la ritira. `apps_list` elenca le pubblicate, con `include_withdrawn` anche le ritirate:
    un id ritirato resta preso (410 `app_withdrawn` a una nuova pubblicazione).
 4. Un'anteprima che non serve più si scarta con `apps_preview_delete` (la pubblicata resta).
@@ -425,6 +427,9 @@ non si scrivono né si cancellano da qui (409).
   con `dimension_ids` uguale a un pezzo, un pezzo per volta, finché sono finiti. `dimension_ids` (solo con
   `keys`) tiene le righe di quelle dimensioni: un id vale per sé e per gli id che cominciano con lui e `|`,
   così `andamento_mensile` (`struttura|metrica`) si taglia per struttura, e `__totale__` è il totale di tutte.
+- Un workspace senza sorgenti di dati collegate e senza misure sue ha un catalogo vuoto: allora
+  `measures_catalog` e `measures_values` lo dicono in `note`. Non è un guasto: dillo alla persona e non
+  riprovare; una misura sulle collezioni la crea un amministratore con `measures_define`.
 - Con la chiave admin, `measures_define` crea o cambia una misura del workspace (chiave `custom_...`):
   conteggio, somma o media di una collezione per periodo e gruppo, oppure una SELECT sui dati del tenant
   che restituisce `period`, `value` e, se serve, `dimension`. Il server fa un dry run e rifiuta ciò che
